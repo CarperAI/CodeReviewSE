@@ -1,8 +1,6 @@
-from email.policy import default
 import json
 from collections import defaultdict
 from tqdm import tqdm
-import multiprocessing
 
 # load posts
 with open("../../codereviewSE/Posts.json") as json_file:
@@ -138,7 +136,7 @@ post_dict = iterate_over_posts(posts)
 post_dict = iterate_over_comments(comments, post_dict)
 
 # Save dictionary to json file named CodeReviewSE.json
-with open('CodeReviewSE.json', 'w') as outfile:
+with open('dataset/CodeReviewSE.json', 'w') as outfile:
     json.dump(post_dict, outfile)
 
             
