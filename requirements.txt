@@ -3,3 +3,5 @@ StackAPI
 xmltodict
 htmlement
 tree_sitter
+torch
+
