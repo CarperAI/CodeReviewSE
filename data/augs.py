@@ -3,6 +3,7 @@ Augmentations and factory function for augmentations.
 
 """
 
+from models.backtranslation import BackTranslationModel
 import torch
 import numpy as np
 
@@ -47,13 +48,6 @@ class RandomAug:
                 aug_data.append(data[i])
         return aug_data
     
-    @classmethod
-    def sample(cls, x, num=None):
-        if isinstance(x, list):
-            return random.sample(x, num)
-        elif isinstance(x, int):
-            return np.random.randint(1, x-1)
-
     def apply(self, data):
         """
         Apply augmentation to the data.
@@ -112,6 +106,17 @@ class SpellingAug(RandomAug):
             
 
 
+
 class BackTranslationAug(RandomAug):
-    pass
+    def __init__(self, src_model_name, tgt_model_name, device='cpu', batch_size=32, max_length=300, p=0.5):
+        super().__init__(p)
+        self.model = BackTranslationModel(src_model_name, tgt_model_name, device, batch_size, max_length)
+
+    def apply(self, i):
+        """
+        Apply augmentation to the element.
+        """
+        return self.model.translate(i)
+
+
 

@@ -4,3 +4,4 @@ xmltodict
 tree_sitter
 torch
 beautifulsoup4
+transformers
