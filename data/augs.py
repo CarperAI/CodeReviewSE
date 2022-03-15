@@ -3,7 +3,7 @@ Augmentations and factory function for augmentations.
 
 """
 
-from models.backtranslation import BackTranslationModel
+#from models.backtranslation import BackTranslationModel
 import torch
 import numpy as np
 
@@ -60,11 +60,11 @@ class KeyboardAug(RandomAug):
     pass
 
 class SpellingAug(RandomAug):
-    def __init__(self, spelling_dict, p=0.5):
+    def __init__(self, spelling_dict, include_reverse=True, p=0.5):
         super().__init__(p)
-        self.spelling_dict = spelling_dict if type(spelling_dict) == dict else self.load_spelling_dict(spelling_dict)
+        self.spelling_dict = spelling_dict if type(spelling_dict) == dict else self.load_spelling_dict(spelling_dict, include_reverse)
 
-    def load_spelling_dict(self, file_path):
+    def load_spelling_dict(self, file_path, include_reverse=True):
         """
         Loads the spelling dictionary from the file.
         """
@@ -85,7 +85,7 @@ class SpellingAug(RandomAug):
                 # Remove duplicate mapping
                 spelling_dict[key] = list(set(spelling_dict[key]))
                 # Build reverse mapping
-                if self.include_reverse:
+                if include_reverse:
                     for value in values:
                         if value not in spelling_dict:
                          spelling_dict[value] = []
@@ -99,9 +99,9 @@ class SpellingAug(RandomAug):
         """
 
         # Replace the word with the correct spelling
-        if i not in self.dict:
+        if i not in self.spelling_dict:
             return i
-        return self.dict[i]
+        return self.spelling_dict[i][np.random.randint(len(self.spelling_dict[i]))]
 
             
 
@@ -119,4 +119,7 @@ class BackTranslationAug(RandomAug):
         return self.model.translate(i)
 
 
-
+if __name__ == "__main__":
+    data = ['hello', 'from', 'the', 'other', 'side']
+    aug = SpellingAug('data/spelling_en.txt')
+    print(aug(data))
