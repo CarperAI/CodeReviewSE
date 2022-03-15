@@ -38,7 +38,6 @@ def check_parseability(parser:Parser, code:str):
 
 
 if __name__ == "__main__":
-    print(load_json_file("utils/parser/lang.json"))
     build_parser_in_tmp_dir("javascript")
     # parser = load_parser("javascript")
     # print(check_parseability(parser,"var 1 = 1;"))
