@@ -2,3 +2,4 @@ tqdm
 StackAPI
 xmltodict
 htmlement
+tree_sitter
