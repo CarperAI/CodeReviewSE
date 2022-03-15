@@ -1,11 +1,19 @@
 import json
 from pprint import pprint
-from html.parser import HTMLParser
-import htmlement
 from pipeline import load_json_file
+from bs4 import BeautifulSoup
     
 
-parse_body = lambda body: htmlement.fromstring(body)
+parse_body = lambda x: x
+
+def parse_body_to_return(body:str,flag="code"):
+    """
+    Parse the body of the content to return code
+    """
+    if flag == "code":
+        return BeautifulSoup(dataset["body"],features="html.parser").pre.code.text
+    else:
+        raise NotImplementedError
 
 def get_accepted_answer(code_review_data:dict):
     """
@@ -20,9 +28,12 @@ def get_accepted_answer(code_review_data:dict):
                 return parse_body(accepted_answer_body)
     
 
+
 if __name__ == "__main__":
     dataset = load_json_file("dataset/CodeReviewSE.json")
-    dataset = dataset[list(dataset.keys())[0]]
-    pprint(dataset.keys())
-    pprint(dataset['meta_data'])
-    pprint(get_accepted_answer(dataset))
+    dataset = dataset[list(dataset.keys())[100]]
+    print(dataset["body"])
+    print(parse_body_to_return(dataset["body"]))
+    #pprint(dataset.keys())
+    #pprint(dataset['meta_data'])
+    #pprint(get_accepted_answer(dataset))
