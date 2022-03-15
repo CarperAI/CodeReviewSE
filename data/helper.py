@@ -6,12 +6,14 @@ from bs4 import BeautifulSoup
 
 parse_body = lambda x: x
 
-def parse_body_to_return(body:str,flag="code"):
+def parse_body_to_return(body:str,flag="code")->list[str]:
     """
     Parse the body of the content to return code
     """
     if flag == "code":
-        return BeautifulSoup(dataset["body"],features="html.parser").pre.code.text
+        html_parsed = BeautifulSoup(body, 'html.parser')
+        code_blocks = html_parsed.find_all("pre")
+        return code_blocks
     else:
         raise NotImplementedError
 
@@ -31,9 +33,10 @@ def get_accepted_answer(code_review_data:dict):
 
 if __name__ == "__main__":
     dataset = load_json_file("dataset/CodeReviewSE.json")
-    dataset = dataset[list(dataset.keys())[100]]
-    print(dataset["body"])
-    print(parse_body_to_return(dataset["body"]))
+    dataset = dataset[list(dataset.keys())[1000]]
+    # print(dataset["body"])
+    # print("#######")
+    parse_body_to_return(dataset["body"])
     #pprint(dataset.keys())
     #pprint(dataset['meta_data'])
     #pprint(get_accepted_answer(dataset))
