@@ -8,15 +8,15 @@ import numpy as np
 from typing import Dict
 import sys
 import json
-import multiprocess
-# specifies a dictionary of architectures
+import multiprocessing
+# specifies a dictionary of augmentations
 _AUGS: Dict[str, any] = {}  # registry
 
 
 def register_aug(name):
-    """Decorator used register a CARP architecture
+    """Decorator used register a an augmentation 
     Args:
-        name: Name of the architecture
+        name: Name of the augmentation
     """
 
     def register_class(cls, name):
@@ -44,7 +44,7 @@ class RandomAug:
 
     def __call__(self, data, threads=16):
         # creates a multiprocess pool to apply the augmentation
-        pool = multiprocess.Pool(threads)
+        pool = multiprocessing.Pool(threads)
         aug_data = pool.map(self.rand_apply, data)
         pool.close()
         return aug_data
