@@ -11,10 +11,9 @@ class KeyboardAug(RandomAug):
 class SpellingAug(RandomAug):
     def __init__(self, spelling_dict, include_reverse=True, p=0.5):
         super().__init__(p)
-        self.include_reverse = include_reverse
-        self.spelling_dict = spelling_dict if type(spelling_dict) == dict else self.load_spelling_dict(spelling_dict)
-    
-    def load_spelling_dict(self, file_path):
+        self.spelling_dict = spelling_dict if type(spelling_dict) == dict else self.load_spelling_dict(spelling_dict, include_reverse)
+
+    def load_spelling_dict(self, file_path, include_reverse=True):
         """
         Loads the spelling dictionary from the file.
         """
@@ -35,7 +34,7 @@ class SpellingAug(RandomAug):
                 # Remove duplicate mapping
                 spelling_dict[key] = list(set(spelling_dict[key]))
                 # Build reverse mapping
-                if self.include_reverse:
+                if include_reverse:
                     for value in values:
                         if value not in spelling_dict:
                          spelling_dict[value] = []
@@ -49,9 +48,9 @@ class SpellingAug(RandomAug):
         """
 
         # Replace the word with the correct spelling
-        if i not in self.dict:
+        if i not in self.spelling_dict:
             return i
-        return self.dict[i]
+        return self.spelling_dict[i][np.random.randint(len(self.spelling_dict[i]))]
 
 @register_aug
 class BackTranslationAug(RandomAug):
