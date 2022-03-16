@@ -2,6 +2,7 @@ tqdm
 StackAPI
 xmltodict
 tree_sitter
+numpy
 torch
 beautifulsoup4
 transformers

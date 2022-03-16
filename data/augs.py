@@ -106,4 +106,7 @@ class Compose:
 
 
 
-
+if __name__ == "__main__":
+    data = ['hello', 'from', 'the', 'other', 'side']
+    aug = SpellingAug('data/spelling_en.txt')
+    print(aug(data))
