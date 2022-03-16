@@ -34,14 +34,6 @@ def register_aug(name):
 
     return cls
 
-
-def get_aug(name):
-    return _AUGS[name.lower()]
-
-
-def get_aug_names():
-    return _AUGS.keys()
-
 class RandomAug:
     """
     Randomly apply one of the augmentations.
@@ -73,6 +65,15 @@ class RandomAug:
         """
         raise NotImplementedError
 
+from random_aug import KeyboardAug, SpellingAug
+
+def get_aug(name):
+    return _AUGS[name.lower()]
+
+
+def get_aug_names():
+    return _AUGS.keys()
+
 
 class Compose:
     """
@@ -81,6 +82,7 @@ class Compose:
 
     def __init__(self, composition_path):
         #  composition_path refers to a json file that contains the augmentations we're using
+        self.augs = []
         with open(composition_path, 'r') as f:
             composition = json.load(f)
         for c in composition:

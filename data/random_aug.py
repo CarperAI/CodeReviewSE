@@ -9,10 +9,11 @@ class KeyboardAug(RandomAug):
 
 @register_aug
 class SpellingAug(RandomAug):
-    def __init__(self, spelling_dict, p=0.5):
+    def __init__(self, spelling_dict, include_reverse=True, p=0.5):
         super().__init__(p)
+        self.include_reverse = include_reverse
         self.spelling_dict = spelling_dict if type(spelling_dict) == dict else self.load_spelling_dict(spelling_dict)
-
+    
     def load_spelling_dict(self, file_path):
         """
         Loads the spelling dictionary from the file.
@@ -52,7 +53,6 @@ class SpellingAug(RandomAug):
             return i
         return self.dict[i]
 
-            
 @register_aug
 class BackTranslationAug(RandomAug):
     def __init__(self, src_model_name, tgt_model_name, device='cpu', batch_size=32, max_length=300, p=0.5):
@@ -60,10 +60,4 @@ class BackTranslationAug(RandomAug):
         self.model = BackTranslationModel(src_model_name, tgt_model_name, device, batch_size, max_length)
 
     def apply(self, i):
-        """
-        Apply augmentation to the element.
-        """
         return self.model.translate(i)
-
-
-
