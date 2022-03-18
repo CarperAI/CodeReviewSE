@@ -1,21 +1,34 @@
 import json
 from pprint import pprint
-from pipeline import load_json_file
 from bs4 import BeautifulSoup
-    
+
+def load_json_file(file_path:str)-> dict:
+    with open(file_path,"r") as f:
+        return json.load(f)
+
+def dump_json_file(file_path:str, data:dict)->None:
+    with open(file_path,"w") as f:
+        json.dump(data,f)
+
+
 
 parse_body = lambda x: x
 
-def parse_body_to_return(body:str,flag="code")->list[str]:
-    """
-    Parse the body of the content to return code
-    """
-    if flag == "code":
-        html_parsed = BeautifulSoup(body, 'html.parser')
-        code_blocks = html_parsed.find_all("pre")
-        return code_blocks
-    else:
-        raise NotImplementedError
+
+def parse_html_to_str(body:str) -> list:
+
+    html_parsed = BeautifulSoup(body, 'html.parser')
+    strings = []
+    children = html_parsed.children
+    
+    for child in children:
+        child_text = child.text
+        if child.name == "pre": child_text = "<code>" + child_text + "</code>"
+        strings.append(child_text)
+
+    return strings
+
+    
 
 def get_accepted_answer(code_review_data:dict):
     """
@@ -36,7 +49,6 @@ if __name__ == "__main__":
     dataset = dataset[list(dataset.keys())[1000]]
     # print(dataset["body"])
     # print("#######")
-    parse_body_to_return(dataset["body"])
     #pprint(dataset.keys())
     #pprint(dataset['meta_data'])
     #pprint(get_accepted_answer(dataset))

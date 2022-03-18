@@ -4,8 +4,5 @@
             "spelling_dict":"data/spelling_en.txt",
             "include_reverse": true
         }
-    },
-    {
-        "name":"KeyboardAug",
-        "params":{}
-    }]
+    }
+]
