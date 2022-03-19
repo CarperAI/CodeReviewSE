@@ -4,11 +4,11 @@ from tqdm import tqdm
 import multiprocessing
 
 # load posts
-with open("Posts.json") as json_file:
+with open("dataset/Posts.json") as json_file:
     posts = json.load(json_file)
 
 # load comments
-with open("Comments.json") as json_file:
+with open("dataset/Comments.json") as json_file:
     comments = json.load(json_file)
 
 """
@@ -137,7 +137,7 @@ post_dict = iterate_over_posts(posts)
 post_dict = iterate_over_comments(comments, post_dict)
 
 # Save dictionary to json file named CodeReviewSE.json
-with open('CodeReviewSE.json', 'w') as outfile:
+with open('dataset/CodeReviewSE.json', 'w') as outfile:
     json.dump(post_dict, outfile)
 
             
