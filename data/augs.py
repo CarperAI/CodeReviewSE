@@ -11,6 +11,10 @@ import sys
 import json
 import multiprocessing
 from tqdm import tqdm
+from tqdm.contrib.concurrent import process_map
+from functools import partial 
+
+
 # specifies a dictionary of augmentations
 _AUGS: Dict[str, any] = {}  # registry
 
@@ -44,18 +48,15 @@ class RandomAug:
     def __init__(self, p=0.5):
         self.p = p
 
-    def __call__(self, data, threads=16):
+    def __call__(self, data):
         # creates a multiprocess pool to apply the augmentation
-        pool = multiprocessing.Pool(threads)
-        aug_data = pool.map(self.rand_apply, data)
-        pool.close()
-        return aug_data
+        return list(map(self.rand_apply, data))
 
     def rand_apply(self, datum):
         """
         Calls apply on the individual apply functions after first sampling torch.rand()
         """
-        if torch.rand(1) < self.p:
+        if np.random.rand(1) < self.p:
             return self.apply(datum)
         else:
             return datum
@@ -115,7 +116,16 @@ def duplicate_data(data, is_ans=False, n=10):
             data[key_name] = data[question]
     return data
 
-
+def iter_body(augs, body):
+    body_strings = parse_html_to_str(body)
+    for i in range(len(body_strings)):
+        body_string = body_strings[i]
+        # is "<code>" present?
+        if "<code>" in body_string.split():
+            continue
+        # apply augmentation
+        body_strings[i] = augs([body_string])[0]
+    return ' '.join(body_strings)
 
 class ApplyAugs:
     """
@@ -133,19 +143,20 @@ class ApplyAugs:
 
     def _call_for_question(self, data):
         keys = list(data.keys())
+        print("There are: ")
+        print(str(len(keys)) + " questions")
         keys = [k for k in keys if '_q' in k]
-        for question in tqdm(keys):
-            body = data[question]['body']
-            body_strings = parse_html_to_str(body)
-            for i in tqdm(range(len(body_strings))):
-                body_string = body_strings[i]
-                # is "<code>" present?
-                if "<code>" in body_string:
-                    continue
-                # apply augmentation
-                body_strings[i] = ' '.join(self.augs(body_string.split(' ')))
 
-            data[question]['body'] = ' '.join(body_strings)
+
+        iter_body_local = partial(iter_body, self.augs)
+        bodies = list(map(lambda x: data[x]['body'], keys))
+
+        with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
+            with tqdm(total=len(bodies)) as pbar:
+                for i, body in enumerate(p.imap_unordered(iter_body_local, bodies)):
+                    bodies[i] = body
+                    pbar.update()
+
 
     def _call_for_answers(self, data):
         keys = list(data.keys())
@@ -159,6 +170,7 @@ class ApplyAugs:
                     # is "<code>" present?
                     if "<code>" in body_string:
                         continue
+                    
                     # apply augmentation
                     body_strings[i] = ' '.join(self.augs(body_string.split(' ')))
 
@@ -179,7 +191,7 @@ class KeyboardAug(RandomAug):
 
 @register_aug
 class SpellingAug(RandomAug):
-    def __init__(self, spelling_dict, include_reverse=True, p=0.5):
+    def __init__(self, spelling_dict, include_reverse=True, p=0.05):
         super().__init__(p)
         self.spelling_dict = spelling_dict if type(spelling_dict) == dict else self.load_spelling_dict(spelling_dict, include_reverse)
 
@@ -216,11 +228,15 @@ class SpellingAug(RandomAug):
         """
         Apply augmentation to the element.
         """
-
-        # Replace the word with the correct spelling
-        if i not in self.spelling_dict:
-            return i
-        return self.spelling_dict[i][np.random.randint(len(self.spelling_dict[i]))]
+        words = i.split()
+        rands = np.random.randint(2, size=len(words))
+        for idx, word in enumerate(words):
+            # Replace the word with the correct spelling
+            if i not in self.spelling_dict:
+                continue
+            else:
+                words[idx] = self.spelling_dict[word][min(len(self.spelling_dict[word]) - 1, rands[idx])]
+        return ' '.join(words)
 
 @register_aug
 class BackTranslationAug(RandomAug):
@@ -239,12 +255,12 @@ if __name__ == "__main__":
     augs = ApplyAugs(augs)
 
     # get a subset of data with the first 2 questions (too slow for whole dataset, need multiprocessing speedup)
-    data = {k: data[k] for k in list(data.keys())[:2]}
+    data = {k: data[k] for k in list(data.keys())}
 
-    data = duplicate_data(data, is_ans=False, n=3)
+    data = duplicate_data(data, is_ans=False, n=1)
     data = augs(data, for_question=True)
-    data = duplicate_data(data, is_ans=True, n=3)
-    data = augs(data, for_question=False)
+    #data = duplicate_data(data, is_ans=True, n=3)
+    #data = augs(data, for_question=False)
 
     print(data['1']['body'])
     print(data['1_q0']['body'])
