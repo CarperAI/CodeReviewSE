@@ -143,46 +143,84 @@ class ApplyAugs:
 
     def _call_for_question(self, data):
         keys = list(data.keys())
+
+        # print the number of questions
         print("There are: ")
         print(str(len(keys)) + " questions")
         keys = [k for k in keys if '_q' in k]
 
-
+        # pass augmentations to iter_body
         iter_body_local = partial(iter_body, self.augs)
+
+        # get each question's body
         bodies = list(map(lambda x: data[x]['body'], keys))
 
+        # iterate over the bodies using multiprocessing
         with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
             with tqdm(total=len(bodies)) as pbar:
                 for i, body in enumerate(p.imap_unordered(iter_body_local, bodies)):
                     bodies[i] = body
+                    # update the progress bar
                     pbar.update()
 
+        # return the source sequence
+        return bodies
 
     def _call_for_answers(self, data):
         keys = list(data.keys())
         keys = [k for k in keys if '_ans' in k]
+
+        iter_answers_local = partial(iter_body, self.augs)
+        answer_bodies = list()
+
+        # get each answer's body
         for question in tqdm(keys):
             for answer in tqdm(data[question]['answers']):
-                body = answer['body']
-                body_strings = parse_html_to_str(body)
-                for i in range(len(body_strings)):
-                    body_string = body_strings[i]
-                    # is "<code>" present?
-                    if "<code>" in body_string:
-                        continue
-                    
-                    # apply augmentation
-                    body_strings[i] = ' '.join(self.augs(body_string.split(' ')))
+                answer_bodies.append(answer['body'])
 
-                answer['body'] = ' '.join(body_strings)
-    
+        # iterate over the bodies using multiprocessing
+        with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
+            with tqdm(total=len(answer_bodies)) as pbar:
+                for i, body in enumerate(p.imap_unordered(iter_answers_local, answer_bodies)):
+                    answer_bodies[i] = body
+                    pbar.update()
+
+        # return the target sequence
+        return answer_bodies
+
     def __call__(self, data, for_question=True):
         if for_question:
-            self._call_for_question(data)
+            return self._call_for_question(data)
         else:
-            self._call_for_answers(data)
-        return data
+            return self._call_for_answers(data)
 
+    # copies back the output of __call__ to the original data
+    def copy_back_question_bodies(self, outputs, data):
+        """
+        outputs is a dict, where the keys are question ids and the values are the augmented bodies.
+        Args:
+            outputs: list of lists
+            data: dict
+        Returns:
+            data: dict
+        """
+        for idx, question in enumerate(data.keys()):
+            data[question]['body'] = outputs[idx]
+        return data
+    # copies back the output of __call__ to the original data
+    def copy_back_answer_bodies(self, outputs, data):
+        """
+        outputs is a dict, where the keys are question ids. Each question has a sub-dict of answers.
+        Args:
+            outputs: list of lists
+            data: dict
+        Returns:
+            data: dict
+        """
+        for idx, question in enumerate(data.keys()):
+            for answer in data[question]['answers']:
+                answer['body'] = outputs[idx]
+        return data    
 
 @register_aug
 class KeyboardAug(RandomAug):
@@ -197,7 +235,7 @@ class SpellingAug(RandomAug):
 
     def load_spelling_dict(self, file_path, include_reverse=True):
         """
-        Loads the spelling dictionary from the file.
+        Loads the spelling dictionary from the file. 
         """
         spelling_dict = {}
         with open(file_path, 'r', encoding="utf-8") as f:
@@ -226,7 +264,7 @@ class SpellingAug(RandomAug):
 
     def apply(self, i):
         """
-        Apply augmentation to the element.
+        Apply augmentation to the element. 
         """
         words = i.split()
         rands = np.random.randint(2, size=len(words))
