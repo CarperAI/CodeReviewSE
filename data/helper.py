@@ -42,6 +42,29 @@ def get_accepted_answer(code_review_data:dict):
                 accepted_answer_body = code_review_answer["body"]
                 return parse_body(accepted_answer_body)
     
+def duplicate_data(data, is_ans=False, n=10):
+    """
+    Duplicate the data by n times for subsequent augmentation. If is_ans is True, then key indicates that the answer is to be augmented, else the question is to be augmented.
+    """
+    for question in list(data.keys()):
+        for i in range(n):
+            if is_ans:
+                key_name = question + '_ans' + str(i)
+            else:
+                key_name = question + '_q' + str(i)
+            data[key_name] = data[question]
+    return data
+
+def iter_body(augs, body):
+    body_strings = parse_html_to_str(body)
+    for i in range(len(body_strings)):
+        body_string = body_strings[i]
+        # is "<code>" present?
+        if "<code>" in body_string.split():
+            continue
+        # apply augmentation
+        body_strings[i] = augs([body_string])[0]
+    return ' '.join(body_strings)
 
 
 if __name__ == "__main__":
