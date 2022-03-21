@@ -102,37 +102,30 @@ class Compose:
         return format_string
 
 class ApplyAugs:
-    """
-    1. Take dict with data
-    2. if for_question is true, then take the 'body' from the dict, else take 'body' from the each of the 'answers' from the dict
-    3. Extract just the text using `parse_html_to_str`
-    4. Apply the provided augmentations to the text if it's not code.
-    5. Save the augmented data back to the dict. 
-    """
-
     def __init__(self, augs):
         assert isinstance(augs, Compose), "augs must be composed together with `Compose`"
         self.augs = augs
     
 
-    def _call_for_question(self, data):
-        keys = list(data.keys())
+    def _call_for_questions(self, data):
+        self.keys = list(data.keys())
 
         # print the number of questions
         print("There are: ")
-        print(str(len(keys)) + " questions")
-        keys = [k for k in keys if '_q' in k]
+        print(str(len(self.keys)) + " questions")
+        self.keys = [k for k in self.keys if '_q' in k]
+        print(self.keys)
 
         # pass augmentations to iter_body
         iter_body_local = partial(iter_body, self.augs)
 
         # get each question's body
-        bodies = list(map(lambda x: data[x]['body'], keys))
+        bodies = list(map(lambda x: data[x]['body'], self.keys))
 
         # iterate over the bodies using multiprocessing
         with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
             with tqdm(total=len(bodies)) as pbar:
-                for i, body in enumerate(p.imap_unordered(iter_body_local, bodies)):
+                for i, body in enumerate(p.imap(iter_body_local, bodies)):
                     bodies[i] = body
                     # update the progress bar
                     pbar.update()
@@ -141,32 +134,27 @@ class ApplyAugs:
         return bodies
 
     def _call_for_answers(self, data):
-        keys = list(data.keys())
-        keys = [k for k in keys if '_ans' in k]
+        self.keys = list(data.keys())
+        self.keys = [k for k in self.keys if '_ans' in k]
+        print(self.keys)
 
         iter_answers_local = partial(iter_body, self.augs)
         answer_bodies = list()
 
         # get each answer's body
-        for question in tqdm(keys):
+        for question in tqdm(self.keys):
             for answer in tqdm(data[question]['answers']):
                 answer_bodies.append(answer['body'])
 
         # iterate over the bodies using multiprocessing
         with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
             with tqdm(total=len(answer_bodies)) as pbar:
-                for i, body in enumerate(p.imap_unordered(iter_answers_local, answer_bodies)):
+                for i, body in enumerate(p.imap(iter_answers_local, answer_bodies)):
                     answer_bodies[i] = body
                     pbar.update()
 
         # return the target sequence
         return answer_bodies
-
-    def __call__(self, data, for_question=True):
-        if for_question:
-            return self._call_for_question(data)
-        else:
-            return self._call_for_answers(data)
 
     # copies back the output of __call__ to the original data
     def copy_back_question_bodies(self, outputs, data):
@@ -178,8 +166,15 @@ class ApplyAugs:
         Returns:
             data: dict
         """
-        for idx, question in enumerate(data.keys()):
+        for idx, question in enumerate(self.keys):
             data[question]['body'] = outputs[idx]
+
+        
+        self.orig_keys = [k for k in data.keys() if '_q' not in k]
+
+        for k in self.orig_keys:
+            data[k]['body'] = ' '.join(parse_html_to_str(data[k]['body']))
+
         return data
     # copies back the output of __call__ to the original data
     def copy_back_answer_bodies(self, outputs, data):
@@ -191,10 +186,26 @@ class ApplyAugs:
         Returns:
             data: dict
         """
-        for idx, question in enumerate(data.keys()):
+
+        idx = 0
+        for question in self.keys:
             for answer in data[question]['answers']:
                 answer['body'] = outputs[idx]
-        return data    
+                idx += 1
+        
+        self.orig_keys = [k for k in data.keys() if '_ans' not in k]
+        
+        for k in self.orig_keys:
+            for answer in data[k]['answers']:
+                answer['body'] = ' '.join(parse_html_to_str(answer['body']))
+
+        return data   
+
+    def __call__(self, data, for_question=True):
+        if for_question:
+            return self.copy_back_question_bodies(self._call_for_questions(data), data)
+        else:
+            return self.copy_back_answer_bodies(self._call_for_answers(data), data) 
 
 @register_aug
 class KeyboardAug(RandomAug):
@@ -203,7 +214,7 @@ class KeyboardAug(RandomAug):
 
 @register_aug
 class SpellingAug(RandomAug):
-    def __init__(self, spelling_dict, include_reverse=True, p=0.05):
+    def __init__(self, spelling_dict, include_reverse=True, p=0.5):
         super().__init__(p)
         self.spelling_dict = spelling_dict if type(spelling_dict) == dict else self.load_spelling_dict(spelling_dict, include_reverse)
 
@@ -244,7 +255,7 @@ class SpellingAug(RandomAug):
         rands = np.random.randint(2, size=len(words))
         for idx, word in enumerate(words):
             # Replace the word with the correct spelling
-            if i not in self.spelling_dict:
+            if word not in self.spelling_dict:
                 continue
             else:
                 words[idx] = self.spelling_dict[word][min(len(self.spelling_dict[word]) - 1, rands[idx])]
@@ -267,17 +278,21 @@ if __name__ == "__main__":
     augs = ApplyAugs(augs)
 
     # get a subset of data with the first 2 questions (too slow for whole dataset, need multiprocessing speedup)
-    data = {k: data[k] for k in list(data.keys())}
+    data = {k: data[k] for k in list(data.keys())[:1]}
 
     data = duplicate_data(data, is_ans=False, n=1)
+
+    print(data.keys())
+
     data = augs(data, for_question=True)
-    #data = duplicate_data(data, is_ans=True, n=3)
-    #data = augs(data, for_question=False)
+    data = duplicate_data(data, is_ans=True, n=1)
+    data = augs(data, for_question=False)
 
     print(data['1']['body'])
     print(data['1_q0']['body'])
     print(data['1_q0_ans0']['body'])
-    print(data['1_q0']['answer'][0]['body'])
-    print(data['1_q0_ans0']['answer'][0]['body'])
+    print(data['1']['answers'][0]['body'])
+    print(data['1_q0']['answers'][0]['body'])
+    print(data['1_q0_ans0']['answers'][0]['body'])
 
     

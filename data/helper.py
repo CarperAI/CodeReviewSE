@@ -1,3 +1,4 @@
+import copy
 import json
 from pprint import pprint
 from bs4 import BeautifulSoup
@@ -52,7 +53,7 @@ def duplicate_data(data, is_ans=False, n=10):
                 key_name = question + '_ans' + str(i)
             else:
                 key_name = question + '_q' + str(i)
-            data[key_name] = data[question]
+            data[key_name] = copy.deepcopy(data[question])
     return data
 
 def iter_body(augs, body):
