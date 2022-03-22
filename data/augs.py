@@ -271,6 +271,7 @@ class BackTranslationAug(RandomAug):
         return self.model.translate(i)
 
 
+# This processes the first two questions with the augmentation pipeline for testing purposes
 if __name__ == "__main__":
     print(get_aug_names())
     data = load_json_file("dataset/CodeReviewSE.json")
@@ -280,14 +281,12 @@ if __name__ == "__main__":
     # get a subset of data with the first 2 questions (too slow for whole dataset, need multiprocessing speedup)
     data = {k: data[k] for k in list(data.keys())[:1]}
 
-    data = duplicate_data(data, is_ans=False, n=1)
+    data = duplicate_data(data, is_ans=False, n=1) # duplicate for augmenting questions 
+    data = augs(data, for_question=True) # apply augmentations to questions 
+    data = duplicate_data(data, is_ans=True, n=1) # duplicate for augmenting answers
+    data = augs(data, for_question=False) # apply augmentations to answers
 
-    print(data.keys())
-
-    data = augs(data, for_question=True)
-    data = duplicate_data(data, is_ans=True, n=1)
-    data = augs(data, for_question=False)
-
+    # print the augmented data
     print(data['1']['body'])
     print(data['1_q0']['body'])
     print(data['1_q0_ans0']['body'])

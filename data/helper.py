@@ -60,13 +60,11 @@ def iter_body(augs, body):
     body_strings = parse_html_to_str(body)
     for i in range(len(body_strings)):
         body_string = body_strings[i]
-        # is "<code>" present?
         if "<code>" in body_string.split():
             continue
-        # apply augmentation
         body_strings[i] = augs([body_string])[0]
     return ' '.join(body_strings)
-
+    
 
 if __name__ == "__main__":
     dataset = load_json_file("dataset/CodeReviewSE.json")
