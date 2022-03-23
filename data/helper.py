@@ -2,6 +2,7 @@ import copy
 import json
 from pprint import pprint
 from bs4 import BeautifulSoup
+from lm_dataformat import Archive
 
 def load_json_file(file_path:str)-> dict:
     with open(file_path,"r") as f:
