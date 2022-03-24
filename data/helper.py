@@ -64,11 +64,26 @@ def iter_body(augs, body):
             continue
         body_strings[i] = augs([body_string])[0]
     return ' '.join(body_strings)
-    
+
+def create_dataset_for_20b(data, question_token = '<Q> ', answer_token = ' <A> ', archive_name = 'codereview_20b'):
+    """
+    Create dataset for 20b training with lm_dataformat (`Archive`)
+    """
+    ar = Archive('dataset')
+    for question in list(data.keys()):
+        text = []
+        text.append(data[question]['body'])
+        for answer in data[question]['answers']:
+            text.append(answer['body'])
+        text.join(answer_token)
+        text = question_token + text
+        ar.add_data(text) # do we need to add metadata?
+    ar.commit(archive_name) # commit the archive
 
 if __name__ == "__main__":
     dataset = load_json_file("dataset/CodeReviewSE.json")
-    dataset = dataset[list(dataset.keys())[1000]]
+    create_dataset_for_20b(dataset)
+    # dataset = dataset[list(dataset.keys())[1000]]
     # print(dataset["body"])
     # print("#######")
     #pprint(dataset.keys())
