@@ -4,7 +4,7 @@ from io import BytesIO
 
 keyword_list = keyword.kwlist
 
-SET_DELIM = " @#@ " # Delimiliter for code blocks
+SET_DELIM = " \n" # Delimiliter for code blocks
 
 def tokenize_code_snippet(code_snippet:str,exclude_keywords=True):
     """
@@ -29,7 +29,7 @@ def jaccard_similarity(code_snippet_1:str,code_snippet_2:str):
     return float(intersection) / union
 
 
-def merge_or_ignore(code_block_list:list[str],similarity_threshold:float)->list[str]:
+def merge_or_ignore(code_block_list:list[str],similarity_threshold:float):
     """
     Merge code blocks if they are similar.
     args:
@@ -66,7 +66,10 @@ def merge_or_ignore(code_block_list:list[str],similarity_threshold:float)->list[
         if ind not in skip_ind:
             merged_code_blocks.append(code_block_list[ind])
     return frozenset(merged_code_blocks),merge_list
-                
+
+
+
+
 
 if __name__ == "__main__":
     code_blocks_hash = ["make_data = lambda x: x","dataset = data.append(_)","make_data = lambda x: x-1","dataset = None"]

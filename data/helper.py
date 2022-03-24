@@ -6,6 +6,8 @@ from bs4 import BeautifulSoup
 
 parse_body = lambda x: x
 
+
+
 def parse_body_to_return(body:str,flag="code")->list[str]:
     """
     Parse the body of the content to return code
