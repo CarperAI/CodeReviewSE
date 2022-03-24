@@ -1,7 +1,5 @@
 import json
-def load_json_file(file_path:str)-> dict:
-    with open(file_path,"r") as f:
-        return json.load(f)
+from data.helper import *
 
 #placeholder function to apply to each element of the dataset
 placeholder = lambda x: x
@@ -20,7 +18,7 @@ class DataProcess:
         self.dataset = load_json_file(path)
         self.config  = load_json_file(config_path)
 
-    def apply_config_prerpoc(self)->dict:
+    def apply_config_preproc(self)->dict:
         """
         Apply the preprocessing config to the dataset.
         """
@@ -29,4 +27,18 @@ class DataProcess:
                 dataset : dict = preproc_fn_dict[key](self.dataset)
             else:
                 raise Exception("No such preprocessing function.")
-        return dataset
+        
+        self.dataset = dataset
+
+    def save_preproc_dataset(self)->None:
+        """
+        Save the preprocessed dataset.
+        """
+        dump_json_file(self.config["output_path"],self.dataset)
+
+
+
+if __name__ == "__main__":
+    pipeline = DataProcess("dataset/CodeReviewSE.json","configs/preproc_config.json")
+    pipeline.apply_config_preproc()
+    pipeline.save_preproc_dataset()
