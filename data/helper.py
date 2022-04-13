@@ -3,6 +3,7 @@ import json
 from pprint import pprint
 from bs4 import BeautifulSoup
 from lm_dataformat import Archive
+from tqdm import tqdm
 
 def load_json_file(file_path:str)-> dict:
     with open(file_path,"r") as f:
@@ -66,24 +67,33 @@ def iter_body(augs, body):
         body_strings[i] = augs([body_string])[0]
     return ' '.join(body_strings)
 
-def create_dataset_for_20b(data, question_token = '<Q> ', answer_token = ' <A> '):
+def create_dataset_for_20b(data, question_token = '<Q> ', answer_token = ' <A> ', archive_name = 'codereview_20b', parse_body = True):
     """
     Create dataset for 20b training with lm_dataformat (`Archive`)
     """
     ar = Archive('dataset')
-    for question in list(data.keys()):
+    for question in tqdm(list(data.keys())):
         text = []
-        text.append(data[question]['body'])
+        body = data[question]['body']
+        if parse_body:
+            body_strings = parse_html_to_str(body)
+            body = ' '.join(body_strings)
+        text.append(body)
         for answer in data[question]['answers']:
-            text.append(answer['body'])
-        text.join(answer_token)
+            body = answer['body']
+            if parse_body:
+                body_strings = parse_html_to_str(body)
+                body = ' '.join(body_strings)
+            text.append(body)
+        text = answer_token.join(text)
         text = question_token + text
         ar.add_data(text) # do we need to add metadata?
-    ar.commit() 
+    ar.commit(archive_name) # commit the archive
 
 if __name__ == "__main__":
-    dataset = load_json_file("dataset/CodeReviewSE.json")
-    dataset = dataset[list(dataset.keys())[1000]]
+    dataset = load_json_file("dataset/CodeReviewSE_clean.json")
+    # dataset = dataset[list(dataset.keys())[100]]
+    create_dataset_for_20b(dataset)
     # print(dataset["body"])
     # print("#######")
     #pprint(dataset.keys())
