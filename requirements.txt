@@ -9,3 +9,4 @@ transformers
 lm-dataformat
 datasets
 accelerate
+rouge-score
