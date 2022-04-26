@@ -7,7 +7,7 @@ from functools import partial
 from data.helper import load_json_file
 from tqdm.auto import tqdm
 import argparse
-
+import math
 
 
 
@@ -58,12 +58,12 @@ if __name__ == "__main__":
     set_seed(args.seed)
     
     config = AutoConfig.from_pretrained(args.model_name)
-    model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name, config=config)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
     dataset = load_json_file(args.dataset)
     dataset = Dataset.from_pandas(pd.DataFrame(data=dataset))
-    dataset = dataset.map(partial(preprocess_examples, tokenizer=tokenizer, max_input_length=max_input_length, max_target_length=max_target_length), batched=True, num_proc=16)
+    dataset = dataset.map(partial(preprocess_examples, tokenizer=tokenizer, max_input_length=args.max_input_length, max_target_length=args.max_target_length), batched=True, num_proc=16)
     print(dataset)
     
     dataset.set_format(type="torch", columns=['input_ids', 'attention_mask', 'labels'])
@@ -96,6 +96,7 @@ if __name__ == "__main__":
     )
 
     if args.wandb_project:
+        import wandb
         wandb.init(project=args.wandb_project, config=args)
         wandb.watch(model)
     
