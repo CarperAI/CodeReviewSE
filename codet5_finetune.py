@@ -9,8 +9,6 @@ from data.helper import load_json_file
 from tqdm.auto import tqdm
 import argparse
 import math
-from sklearn.model_selection import train_test_split
-import os
 
 
 def parse_args():
