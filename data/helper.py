@@ -1,6 +1,7 @@
 import copy
 import json
 from pprint import pprint
+from re import L
 from bs4 import BeautifulSoup
 from lm_dataformat import Archive
 from tqdm import tqdm
@@ -66,6 +67,33 @@ def iter_body(augs, body):
         body_strings[i] = augs([body_string])[0]
     return ' '.join(body_strings)
 
+
+def create_dataset_for_QA(data, dest, parse_body=True):
+    """
+    Create a JSON file for the dataset. To do this, for each answer, append to the list a dict with the title, question, and answer, then dump to JSON.
+    """
+
+    dataset_list = []
+    for question in tqdm(list(data.keys())):
+        for answer in data[question]["answers"]:
+            if parse_body: 
+                body_strings = parse_html_to_str(data[question]["body"])
+                question_body = ' '.join(body_strings)
+                body_strings = parse_html_to_str(answer["body"])
+                answer_body = ' '.join(body_strings)
+            else: 
+                question_body = data[question]["body"]
+                answer_body = answer["body"]
+
+            dataset_list.append({
+                "title": data[question]["meta_data"]["Title"],
+                "question": question_body,
+                "answer": answer_body
+            })
+    dump_json_file(dest, dataset_list)
+            
+
+
 def create_dataset_for_20b(data, question_token = '<Q> ', answer_token = ' <A> ', archive_name = 'codereview_20b', parse_body = True):
     """
     Create dataset for 20b training with lm_dataformat (`Archive`)
@@ -91,8 +119,9 @@ def create_dataset_for_20b(data, question_token = '<Q> ', answer_token = ' <A> '
 
 if __name__ == "__main__":
     dataset = load_json_file("dataset/CodeReviewSE_clean.json")
+    create_dataset_for_QA(dataset, "dataset/CodeReviewSE_clean_QA.json")
     # dataset = dataset[list(dataset.keys())[100]]
-    create_dataset_for_20b(dataset)
+    #create_dataset_for_20b(dataset)
     # print(dataset["body"])
     # print("#######")
     #pprint(dataset.keys())

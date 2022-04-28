@@ -2,4 +2,5 @@ dataset
 *.pyc
 utils/parser/tmp
 utils/parser/build
+wandb/
 tmp
