@@ -18,7 +18,6 @@ def dump_json_file(file_path:str, data:dict)->None:
 
 parse_body = lambda x: x
 
-
 def parse_html_to_str(body:str) -> list:
 
     html_parsed = BeautifulSoup(body, 'html.parser')
