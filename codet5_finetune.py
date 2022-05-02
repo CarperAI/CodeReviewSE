@@ -4,12 +4,15 @@ import torch
 import torch.nn.functional as F
 import pandas as pd
 from torch.utils.data import DataLoader
+from accelerate import Accelerator
 from functools import partial
 from data.helper import load_json_file
 from tqdm.auto import tqdm
 import argparse
 import math
-
+import numpy as np
+import nltk
+nltk.download('punkt')
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -26,11 +29,11 @@ def parse_args():
     parser.add_argument('--num_warmup_steps', type=int, default=10)
     parser.add_argument('--lr_scheduler_type', type=SchedulerType, default="linear", choices=["linear", "cosine", "cosine_with_restarts", "polynomial", "constant", "constant_with_warmup"])
     parser.add_argument('--validation_split', type=float, default=0.05)
-    parser.add_argument('--metric', type=str, nargs='+', default='rouge')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--gpu_id', type=int, default=0)
     parser.add_argument('--wandb_project', type=str, default='finetune-codet5-for-codereview')
-    parser.add_argument('--num_update_steps_per_epoch', type=int, default=1000)
+    parser.add_argument('--num_update_steps_per_epoch', type=int, default=100)
+    parser.add_argument('--checkpointing_frequency', type=int, default=1)
 
     return parser.parse_args()
 
@@ -57,10 +60,19 @@ def preprocess_examples(examples, tokenizer, max_input_length, max_target_length
     return model_inputs
 
 
+def calc_metric(metric, predictions, labels):
+    decoded_preds = ["\n".join(nltk.sent_tokenize(pred.strip())) for pred in predictions]
+    decoded_labels = ["\n".join(nltk.sent_tokenize(label.strip())) for label in labels]
+    result = metric.compute(predictions=predictions, references=labels)
+    result = {key: value.mid.fmeasure * 100 for key, value in result.items()}
+    return result
+
 if __name__ == "__main__":
     args = parse_args()
     set_seed(args.seed)
     torch.cuda.set_device(args.gpu_id)
+
+    accelerator = Accelerator()
     
     config = AutoConfig.from_pretrained(args.model_name)
     model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name, config=config)
@@ -101,7 +113,10 @@ if __name__ == "__main__":
     )
 
     # metric
-    metric = load_metric(args.metric)
+    metric = load_metric('rouge') # hard-coded to ROUGE
+
+    # accelerator
+    model, optimizer, train_dataloader, val_dataloader, lr_scheduler = accelerator.prepare(model, optimizer, train_dataloader, val_dataloader, lr_scheduler)
 
     # wandb
     if args.wandb_project:
@@ -113,18 +128,16 @@ if __name__ == "__main__":
     global_steps = 0
 
     # Train the model
-    model = model.to(torch.device("cuda"))
-
     for epoch in range(args.num_train_epochs):
         print("Epoch: {}".format(epoch))
         model.train()
         for step, batch in enumerate(train_dataloader):
-            input_ids = batch["input_ids"].to(torch.device("cuda"))
-            attention_mask = batch["attention_mask"].to(torch.device("cuda"))
-            labels = batch["labels"].to(torch.device("cuda"))
+            input_ids = batch["input_ids"]
+            attention_mask = batch["attention_mask"]
+            labels = batch["labels"]
             outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
             loss = outputs.loss / args.gradient_accumulation_steps
-            loss.backward()
+            accelerator.backward(loss)
             if step % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
                 optimizer.step()
                 lr_scheduler.step()
@@ -143,12 +156,16 @@ if __name__ == "__main__":
                 print("LR: {}".format(optimizer.param_groups[0]["lr"]))
                 print("\n")
                 
+                
         # evaluate on validation set
         model.eval()
+        all_input = []
+        all_preds = []
+        all_labels = []
         for step, batch in tqdm(enumerate(val_dataloader),total=len(val_dataloader)):
-            input_ids = batch["input_ids"].to(torch.device("cuda"))
-            attention_mask = batch["attention_mask"].to(torch.device("cuda"))
-            labels = batch["labels"].to(torch.device("cuda"))
+            input_ids = batch["input_ids"]
+            attention_mask = batch["attention_mask"]
+            labels = batch["labels"].cpu()
             generated_ids = model.generate(
                 input_ids = input_ids,
                 attention_mask = attention_mask, 
@@ -158,16 +175,35 @@ if __name__ == "__main__":
                 length_penalty=1.0, 
                 early_stopping=True
                 )
-            metric.add_batch(predictions=generated_ids, references=labels)
+            decoded_input = tokenizer.batch_decode(input_ids, skip_special_tokens=True)
+            decoded_preds = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+            # Replace -100 in the labels as we can't decode them.
+            labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+            decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+            all_input += decoded_input
+            all_preds += decoded_preds
+            all_labels += decoded_labels
 
-        eval_metric = metric.compute()
+        # evaluate
+        eval_metric = calc_metric(metric, all_preds, all_labels)
         print(eval_metric)
 
+        # checkpoints
+        if epoch % args.checkpointing_frequency == 0:
+            accelerator.save_state(f'checkpoints/epoch_{epoch}')
+
+        
+
         if args.wandb_project:
+            preds_table = pd.DataFrame({"input": all_input, "preds": all_preds, "labels": all_labels})
+            wandb.log({'validation predictions': wandb.Table(dataframe=preds_table)}, step=global_steps)
             wandb.log(eval_metric, step=global_steps)
+            wandb.save('checkpoints/**/*')
 
 
     if args.wandb_project:
+        model.save_pretrained('final')
+        wandb.save('final/*')
         wandb.finish()
     
 
