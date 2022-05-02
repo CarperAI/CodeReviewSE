@@ -1,13 +1,14 @@
 import json
 from collections import defaultdict
 from tqdm import tqdm
+import multiprocessing
 
 # load posts
-with open("../../codereviewSE/Posts.json") as json_file:
+with open("dataset/Posts.json") as json_file:
     posts = json.load(json_file)
 
 # load comments
-with open("../../codereviewSE/Comments.json") as json_file:
+with open("dataset/Comments.json") as json_file:
     comments = json.load(json_file)
 
 """

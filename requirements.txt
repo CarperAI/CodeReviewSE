@@ -7,3 +7,6 @@ torch
 beautifulsoup4
 transformers
 lm-dataformat
+datasets
+accelerate
+rouge-score
