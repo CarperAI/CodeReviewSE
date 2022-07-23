@@ -5,3 +5,4 @@ utils/parser/build
 wandb/
 checkpoints/
 final/
+preds/
