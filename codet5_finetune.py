@@ -1,4 +1,5 @@
-from transformers import AdamW, SchedulerType, get_scheduler, set_seed, AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import SchedulerType, get_scheduler, set_seed, AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
+from torch.optim import AdamW
 from datasets import Dataset, load_metric
 import torch
 import torch.nn.functional as F
@@ -19,6 +20,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='dataset/CodeReviewSE_clean_QA.json')
     parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--eval_batch_size', type=int, default=64)
     parser.add_argument('--num_workers', type=int, default=16)
     parser.add_argument('--num_train_epochs', type=int, default=10)
     parser.add_argument('--learning_rate', type=float, default=3e-5)
@@ -84,7 +86,7 @@ if __name__ == "__main__":
     dataset.set_format(type="torch", columns=['input_ids', 'attention_mask', 'labels'])
     dataset = dataset.train_test_split(test_size=args.validation_split, seed=args.seed)
     train_dataloader = DataLoader(dataset['train'], shuffle=True, batch_size=args.batch_size, num_workers=args.num_workers)
-    val_dataloader = DataLoader(dataset['test'], shuffle=False, batch_size=args.batch_size, num_workers=args.num_workers)
+    val_dataloader = DataLoader(dataset['test'], shuffle=False, batch_size=args.eval_batch_size, num_workers=args.num_workers)
 
     # Optimizer
     # Split weights in two groups, one with weight decay and the other not.
@@ -160,8 +162,8 @@ if __name__ == "__main__":
         for step, batch in tqdm(enumerate(val_dataloader),total=len(val_dataloader)):
             input_ids = batch["input_ids"]
             attention_mask = batch["attention_mask"]
-            labels = batch["labels"].cpu()
-            generated_ids = model.generate(
+            labels = batch["labels"]
+            generated_ids = accelerator.unwrap_model(model).generate(
                 input_ids = input_ids,
                 attention_mask = attention_mask, 
                 max_length=150, 
@@ -170,18 +172,32 @@ if __name__ == "__main__":
                 length_penalty=1.0, 
                 early_stopping=True
                 )
+
+
+            generated_ids = accelerator.pad_across_processes(
+                    generated_ids, dim=1, pad_index=tokenizer.pad_token_id
+                )
+            
+            input_ids, generated_ids, labels = accelerator.gather((input_ids, generated_ids, labels))
+            input_ids = input_ids.cpu().numpy()
+            generated_ids = generated_ids.cpu().numpy()
+            labels = labels.cpu().numpy()
+
             decoded_input = tokenizer.batch_decode(input_ids, skip_special_tokens=True)
             decoded_preds = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
             # Replace -100 in the labels as we can't decode them.
             labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
             decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
-            all_input += accelerator.gather(decoded_input)
-            all_preds += accelerator.gather(decoded_preds)
-            all_labels += accelerator.gather(decoded_labels)
-
+            all_input += decoded_input
+            all_preds += decoded_preds
+            all_labels += decoded_labels
+        
+        accelerator.wait_for_everyone()
+        
         # evaluate
-        if accelerator.is_main_process: eval_metric = calc_metric(metric, all_preds, all_labels)
-        accelerator.print('Metric: ', eval_metric)
+        if accelerator.is_main_process: 
+            eval_metric = calc_metric(metric, all_preds, all_labels)
+            accelerator.print('Metric: ', eval_metric)
 
         # checkpoints
         if epoch % args.checkpointing_frequency == 0:
@@ -194,15 +210,18 @@ if __name__ == "__main__":
             preds_df = pd.DataFrame({"input": all_input, "preds": all_preds, "labels": all_labels})
             preds_df.to_json(f"preds/epoch_{epoch}.json", orient="split")
 
+        accelerator.wait_for_everyone()
+
         if bool(args.wandb_project) & accelerator.is_main_process:
             wandb.log({'validation predictions': wandb.Table(dataframe=preds_df.head(1000))})
             wandb.log(eval_metric)
             wandb.save('preds/epoch_{}.json'.format(epoch))
             wandb.save('checkpoints/epoch_{}/*'.format(epoch))
 
+    accelerator.wait_for_everyone()
 
     if bool(args.wandb_project) & accelerator.is_main_process:
-        model.save_pretrained('final')
+        accelerator.unwrap_model(model).save_pretrained('final')
         wandb.save('final/*')
         wandb.finish()
     
