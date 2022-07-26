@@ -1,4 +1,5 @@
-from transformers import AdamW, SchedulerType, get_scheduler, set_seed, AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import SchedulerType, get_scheduler, set_seed, AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
+from torch.optim import AdamW
 from datasets import Dataset, load_metric
 import torch
 import torch.nn.functional as F
@@ -8,6 +9,7 @@ from accelerate import Accelerator
 from functools import partial
 from data.helper import load_json_file
 from tqdm.auto import tqdm
+import os
 import argparse
 import math
 import numpy as np
@@ -18,6 +20,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='dataset/CodeReviewSE_clean_QA.json')
     parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--eval_batch_size', type=int, default=64)
     parser.add_argument('--num_workers', type=int, default=16)
     parser.add_argument('--num_train_epochs', type=int, default=10)
     parser.add_argument('--learning_rate', type=float, default=3e-5)
@@ -30,7 +33,7 @@ def parse_args():
     parser.add_argument('--lr_scheduler_type', type=SchedulerType, default="linear", choices=["linear", "cosine", "cosine_with_restarts", "polynomial", "constant", "constant_with_warmup"])
     parser.add_argument('--validation_split', type=float, default=0.05)
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--gpu_id', type=int, default=0)
+    #parser.add_argument('--gpu_id', type=int, default=0)
     parser.add_argument('--wandb_project', type=str, default='finetune-codet5-for-codereview')
     parser.add_argument('--num_update_steps_per_epoch', type=int, default=100)
     parser.add_argument('--checkpointing_frequency', type=int, default=1)
@@ -70,9 +73,8 @@ def calc_metric(metric, predictions, labels):
 if __name__ == "__main__":
     args = parse_args()
     set_seed(args.seed)
-    torch.cuda.set_device(args.gpu_id)
 
-    accelerator = Accelerator()
+    accelerator = Accelerator(gradient_accumulation_steps=args.gradient_accumulation_steps)
     
     config = AutoConfig.from_pretrained(args.model_name)
     model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name, config=config)
@@ -84,7 +86,7 @@ if __name__ == "__main__":
     dataset.set_format(type="torch", columns=['input_ids', 'attention_mask', 'labels'])
     dataset = dataset.train_test_split(test_size=args.validation_split, seed=args.seed)
     train_dataloader = DataLoader(dataset['train'], shuffle=True, batch_size=args.batch_size, num_workers=args.num_workers)
-    val_dataloader = DataLoader(dataset['test'], shuffle=False, batch_size=args.batch_size, num_workers=args.num_workers)
+    val_dataloader = DataLoader(dataset['test'], shuffle=False, batch_size=args.eval_batch_size, num_workers=args.num_workers)
 
     # Optimizer
     # Split weights in two groups, one with weight decay and the other not.
@@ -101,15 +103,12 @@ if __name__ == "__main__":
     ]
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
 
-    # Scheduler and math around the number of training steps.
-    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
-    max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
-
+    # Scheduler
     lr_scheduler = get_scheduler(
         name=args.lr_scheduler_type,
         optimizer=optimizer,
         num_warmup_steps=args.num_warmup_steps,
-        num_training_steps=max_train_steps,
+        num_training_steps=args.num_train_epochs * len(train_dataloader)
     )
 
     # metric
@@ -119,42 +118,40 @@ if __name__ == "__main__":
     model, optimizer, train_dataloader, val_dataloader, lr_scheduler = accelerator.prepare(model, optimizer, train_dataloader, val_dataloader, lr_scheduler)
 
     # wandb
-    if args.wandb_project:
+    if bool(args.wandb_project) & accelerator.is_main_process:
         import wandb
         wandb.init(project=args.wandb_project, config=args)
-        wandb.watch(model)
     
+    max_train_steps = len(train_dataloader)*args.num_train_epochs
     progress_bar = tqdm(range(max_train_steps))
     global_steps = 0
 
     # Train the model
     for epoch in range(args.num_train_epochs):
-        print("Epoch: {}".format(epoch))
+        accelerator.print("Epoch: {}".format(epoch))
         model.train()
         for step, batch in enumerate(train_dataloader):
             input_ids = batch["input_ids"]
             attention_mask = batch["attention_mask"]
             labels = batch["labels"]
-            outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
-            loss = outputs.loss / args.gradient_accumulation_steps
-            accelerator.backward(loss)
-            if step % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
+            with accelerator.accumulate(model):
+                outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
+                loss = outputs.loss
+                accelerator.backward(loss)
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
-                progress_bar.update(1)
-                global_steps += 1
-                loss = loss.item()
-                #tqdm.write(f"epoch = {epoch}, step = {global_steps}, loss = {loss}")
-                if args.wandb_project:
-                    wandb.log({"loss": loss}, step=global_steps)
-                
-            
+            progress_bar.update(1)
+            global_steps += 1
+            loss = loss.item()
+            if bool(args.wandb_project) & accelerator.is_main_process:
+                wandb.log({"loss": loss})
+                            
             if (step + 1) % args.num_update_steps_per_epoch == 0:
-                print("Step: {}/{}".format(step + 1, max_train_steps))
-                print("Loss: {}".format(loss))
-                print("LR: {}".format(optimizer.param_groups[0]["lr"]))
-                print("\n")
+                accelerator.print("Step: {}/{}".format(step + 1, max_train_steps))
+                accelerator.print("Loss: {}".format(loss))
+                accelerator.print("LR: {}".format(optimizer.param_groups[0]["lr"]))
+                accelerator.print("\n")
                 
                 
         # evaluate on validation set
@@ -165,8 +162,15 @@ if __name__ == "__main__":
         for step, batch in tqdm(enumerate(val_dataloader),total=len(val_dataloader)):
             input_ids = batch["input_ids"]
             attention_mask = batch["attention_mask"]
-            labels = batch["labels"].cpu()
-            generated_ids = model.generate(
+            labels = batch["labels"]
+
+            # valid loss
+            with torch.no_grad():
+                outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
+                val_loss = outputs.loss.item()
+
+            # text generation
+            generated_ids = accelerator.unwrap_model(model).generate(
                 input_ids = input_ids,
                 attention_mask = attention_mask, 
                 max_length=150, 
@@ -175,6 +179,17 @@ if __name__ == "__main__":
                 length_penalty=1.0, 
                 early_stopping=True
                 )
+
+
+            generated_ids = accelerator.pad_across_processes(
+                    generated_ids, dim=1, pad_index=tokenizer.pad_token_id
+                )
+            
+            input_ids, generated_ids, labels = accelerator.gather((input_ids, generated_ids, labels))
+            input_ids = input_ids.cpu().numpy()
+            generated_ids = generated_ids.cpu().numpy()
+            labels = labels.cpu().numpy()
+
             decoded_input = tokenizer.batch_decode(input_ids, skip_special_tokens=True)
             decoded_preds = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
             # Replace -100 in the labels as we can't decode them.
@@ -183,26 +198,41 @@ if __name__ == "__main__":
             all_input += decoded_input
             all_preds += decoded_preds
             all_labels += decoded_labels
-
+        
+        accelerator.wait_for_everyone()
+        
         # evaluate
-        eval_metric = calc_metric(metric, all_preds, all_labels)
-        print(eval_metric)
+        if accelerator.is_main_process: 
+            eval_metric = calc_metric(metric, all_preds, all_labels)
+            accelerator.print('Metric: ', eval_metric)
 
         # checkpoints
         if epoch % args.checkpointing_frequency == 0:
             accelerator.save_state(f'checkpoints/epoch_{epoch}')
 
+        # save predictions
         
+        if accelerator.is_main_process:
+            if not os.path.exists('preds'): os.makedirs('preds')
+            preds_df = pd.DataFrame({"input": all_input, "preds": all_preds, "labels": all_labels})
+            preds_df.to_json(f"preds/epoch_{epoch}.json", orient="split")
 
-        if args.wandb_project:
-            preds_table = pd.DataFrame({"input": all_input, "preds": all_preds, "labels": all_labels})
-            wandb.log({'validation predictions': wandb.Table(dataframe=preds_table)}, step=global_steps)
-            wandb.log(eval_metric, step=global_steps)
-            wandb.save('checkpoints/**/*')
+        accelerator.wait_for_everyone()
 
+        if bool(args.wandb_project) & accelerator.is_main_process:
+            wandb.log({"val_loss": val_loss})
+            wandb.log({'validation predictions': wandb.Table(dataframe=preds_df.head(1000))})
+            wandb.log(eval_metric)
+            wandb.save('preds/epoch_{}.json'.format(epoch))
+            wandb.save('checkpoints/epoch_{}/*'.format(epoch))
+    
+        accelerator.print("Valid loss: {}".format(val_loss))
+        accelerator.print("\n")
 
-    if args.wandb_project:
-        model.save_pretrained('final')
+    accelerator.wait_for_everyone()
+
+    if bool(args.wandb_project) & accelerator.is_main_process:
+        accelerator.unwrap_model(model).save_pretrained('final')
         wandb.save('final/*')
         wandb.finish()
     
