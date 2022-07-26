@@ -163,6 +163,13 @@ if __name__ == "__main__":
             input_ids = batch["input_ids"]
             attention_mask = batch["attention_mask"]
             labels = batch["labels"]
+
+            # valid loss
+            with torch.no_grad():
+                outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
+                val_loss = outputs.loss.item()
+
+            # text generation
             generated_ids = accelerator.unwrap_model(model).generate(
                 input_ids = input_ids,
                 attention_mask = attention_mask, 
@@ -213,10 +220,14 @@ if __name__ == "__main__":
         accelerator.wait_for_everyone()
 
         if bool(args.wandb_project) & accelerator.is_main_process:
+            wandb.log({"val_loss": val_loss})
             wandb.log({'validation predictions': wandb.Table(dataframe=preds_df.head(1000))})
             wandb.log(eval_metric)
             wandb.save('preds/epoch_{}.json'.format(epoch))
             wandb.save('checkpoints/epoch_{}/*'.format(epoch))
+    
+        accelerator.print("Valid loss: {}".format(val_loss))
+        accelerator.print("\n")
 
     accelerator.wait_for_everyone()
 
