@@ -1,0 +1,1 @@
+python -m data.test_codex_time_rate --file_path "dataset/CodeReviewSE_py.json" --length -1  --if_apply_codex_flag "type_inference" --hash_path "dataset/CodeReviewSE_py.txt"
