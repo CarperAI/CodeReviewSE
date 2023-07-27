@@ -4,8 +4,8 @@ import openai
 import ast
 import sys
 import subprocess
-from helper import parse_body_to_return,get_accepted_answer
-from pipeline import load_json_file
+from data.helper import parse_html_to_str,get_accepted_answer
+from data.pipeline import load_json_file
 import logging
 
 from bs4 import BeautifulSoup
@@ -143,7 +143,7 @@ class ProcessDataset:
         Given a index, return the corresponding data entry.
         """
         data_point =  self.data[str(index)]
-        code_blocks_data_point = parse_body_to_return(data_point["body"])
+        code_blocks_data_point = parse_html_to_str(data_point["body"])
         return code_blocks_data_point
 
         
